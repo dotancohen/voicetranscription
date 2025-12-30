@@ -1,0 +1,16 @@
+[package]
+name = "voice-transcription-python"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Python bindings for VoiceTranscription"
+
+[lib]
+name = "voice_transcription"
+crate-type = ["cdylib"]
+
+[dependencies]
+voice-transcription = { workspace = true }
+pyo3 = { workspace = true }
+tokio = { workspace = true }

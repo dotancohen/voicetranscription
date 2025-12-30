@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "bindings/python",
+    "bindings/android",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Dotan Cohen"]
+license = "MIT"
+repository = "https://github.com/dotancohen/VoiceTranscription"
+
+[workspace.dependencies]
+# Core dependencies
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+thiserror = "1"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+
+# Whisper
+whisper-rs = "0.12"
+
+# Python bindings
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+# Android bindings
+uniffi = "0.28"
+
+# Internal
+voice-transcription = { path = "." }
+
+[package]
+name = "voice-transcription"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core transcription library with pluggable backends"
+
+[dependencies]
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+whisper-rs = { workspace = true }
+async-trait = { workspace = true }

@@ -1,0 +1,56 @@
+namespace voice_transcription {
+    // Factory functions
+    [Throws=TranscriptionError]
+    TranscriptionClient create_local_whisper_client(string model_path);
+};
+
+[Error]
+enum TranscriptionError {
+    "FileNotFound",
+    "UnsupportedFormat",
+    "ModelLoadError",
+    "TranscriptionFailed",
+    "BackendNotAvailable",
+    "InvalidConfig",
+    "IoError",
+    "Other",
+};
+
+dictionary Segment {
+    string text;
+    f64 start_seconds;
+    f64 end_seconds;
+    string? speaker;
+    f64? confidence;
+};
+
+dictionary TranscriptionResult {
+    string content;
+    sequence<Segment> segments;
+    sequence<string>? languages;
+    f64? duration_seconds;
+    f64? confidence;
+    u32? speaker_count;
+};
+
+dictionary TranscriptionConfig {
+    string? language;
+    u32? speaker_count;
+    boolean word_timestamps;
+    string? model;
+};
+
+interface TranscriptionClient {
+    string backend_name();
+    sequence<string> supported_features();
+    boolean is_ready();
+
+    [Throws=TranscriptionError]
+    TranscriptionResult transcribe(string audio_path);
+
+    [Throws=TranscriptionError]
+    TranscriptionResult transcribe_with_config(string audio_path, TranscriptionConfig config);
+
+    [Throws=TranscriptionError]
+    TranscriptionResult transcribe_with_language(string audio_path, string language);
+};
