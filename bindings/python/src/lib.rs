@@ -5,9 +5,10 @@ use pyo3::prelude::*;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-use voice_transcription::{
+use ::voice_transcription::{
+    audio::{get_cache_info as core_get_cache_info, clear_cache as core_clear_cache},
     backends::LocalWhisperBackend, BackendConfig, TranscriptionClient as CoreClient,
-    TranscriptionConfig as CoreConfig,
+    TranscriptionConfig as CoreConfig, Segment as CoreSegment, TranscriptionResult as CoreResult,
 };
 
 /// A segment of transcribed audio.
@@ -36,8 +37,8 @@ impl Segment {
     }
 }
 
-impl From<voice_transcription::Segment> for Segment {
-    fn from(s: voice_transcription::Segment) -> Self {
+impl From<CoreSegment> for Segment {
+    fn from(s: CoreSegment) -> Self {
         Self {
             text: s.text,
             start_seconds: s.start_seconds,
@@ -82,11 +83,11 @@ impl TranscriptionResult {
     }
 }
 
-impl From<voice_transcription::TranscriptionResult> for TranscriptionResult {
-    fn from(r: voice_transcription::TranscriptionResult) -> Self {
+impl From<CoreResult> for TranscriptionResult {
+    fn from(r: CoreResult) -> Self {
         Self {
             content: r.content,
-            segments: r.segments.into_iter().map(|s| s.into()).collect(),
+            segments: r.segments.into_iter().map(|s: CoreSegment| s.into()).collect(),
             languages: r.languages,
             duration_seconds: r.duration_seconds,
             confidence: r.confidence,
@@ -103,30 +104,33 @@ pub struct TranscriptionConfig {
     speaker_count: Option<u32>,
     word_timestamps: bool,
     model: Option<String>,
+    nocache: bool,
 }
 
 #[pymethods]
 impl TranscriptionConfig {
     #[new]
-    #[pyo3(signature = (language=None, speaker_count=None, word_timestamps=false, model=None))]
+    #[pyo3(signature = (language=None, speaker_count=None, word_timestamps=false, model=None, nocache=false))]
     fn new(
         language: Option<String>,
         speaker_count: Option<u32>,
         word_timestamps: bool,
         model: Option<String>,
+        nocache: bool,
     ) -> Self {
         Self {
             language,
             speaker_count,
             word_timestamps,
             model,
+            nocache,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "TranscriptionConfig(language={:?}, speaker_count={:?})",
-            self.language, self.speaker_count
+            "TranscriptionConfig(language={:?}, speaker_count={:?}, nocache={})",
+            self.language, self.speaker_count, self.nocache
         )
     }
 }
@@ -145,6 +149,9 @@ impl From<&TranscriptionConfig> for CoreConfig {
         }
         if let Some(ref model) = c.model {
             config = config.with_model(model);
+        }
+        if c.nocache {
+            config = config.with_nocache();
         }
         config
     }
@@ -250,7 +257,7 @@ impl TranscriptionClient {
         audio_path: &str,
         language: &str,
     ) -> PyResult<TranscriptionResult> {
-        let config = TranscriptionConfig::new(Some(language.to_string()), None, false, None);
+        let config = TranscriptionConfig::new(Some(language.to_string()), None, false, None, false);
         self.transcribe(audio_path, Some(config))
     }
 
@@ -263,6 +270,79 @@ impl TranscriptionClient {
     }
 }
 
+/// Information about the audio cache.
+#[pyclass]
+#[derive(Clone)]
+pub struct CacheInfo {
+    #[pyo3(get)]
+    pub path: String,
+    #[pyo3(get)]
+    pub size_bytes: u64,
+    #[pyo3(get)]
+    pub file_count: usize,
+}
+
+#[pymethods]
+impl CacheInfo {
+    /// Get human-readable size string.
+    fn size_human(&self) -> String {
+        const KB: u64 = 1024;
+        const MB: u64 = KB * 1024;
+        const GB: u64 = MB * 1024;
+
+        if self.size_bytes >= GB {
+            format!("{:.2} GB", self.size_bytes as f64 / GB as f64)
+        } else if self.size_bytes >= MB {
+            format!("{:.2} MB", self.size_bytes as f64 / MB as f64)
+        } else if self.size_bytes >= KB {
+            format!("{:.2} KB", self.size_bytes as f64 / KB as f64)
+        } else {
+            format!("{} bytes", self.size_bytes)
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CacheInfo(path={:?}, size={}, files={})",
+            self.path,
+            self.size_human(),
+            self.file_count
+        )
+    }
+}
+
+/// Get information about the audio conversion cache.
+///
+/// Returns:
+///     CacheInfo with path, size, and file count.
+///
+/// Raises:
+///     RuntimeError: If cache info cannot be retrieved.
+#[pyfunction]
+fn get_cache_info() -> PyResult<CacheInfo> {
+    let info = core_get_cache_info()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to get cache info: {}", e)))?;
+
+    Ok(CacheInfo {
+        path: info.path.display().to_string(),
+        size_bytes: info.size_bytes,
+        file_count: info.file_count,
+    })
+}
+
+/// Clear the audio conversion cache.
+///
+/// Returns:
+///     Number of files removed.
+///
+/// Raises:
+///     RuntimeError: If cache cannot be cleared.
+#[pyfunction]
+fn clear_cache() -> PyResult<usize> {
+    core_clear_cache()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to clear cache: {}", e)))
+}
+
 /// VoiceTranscription Python module.
 #[pymodule]
 fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -270,5 +350,8 @@ fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TranscriptionResult>()?;
     m.add_class::<TranscriptionConfig>()?;
     m.add_class::<TranscriptionClient>()?;
+    m.add_class::<CacheInfo>()?;
+    m.add_function(wrap_pyfunction!(get_cache_info, m)?)?;
+    m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
     Ok(())
 }

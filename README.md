@@ -287,23 +287,65 @@ The `examples/` directory contains ready-to-use example applications with TOML c
 ### Setup
 
 1. Build the Python bindings:
-   ```bash
-   cd bindings/python
-   maturin develop
-   ```
+```bash
+cd bindings/python
+maturin develop
+```
 
-2. Download a Whisper model and update `examples/config.toml`:
-   ```toml
-   [whisper]
-   model_path = "/path/to/ggml-base.bin"
-   ```
+2. Download a Whisper model to the canonical location:
+```bash
+mkdir -p ~/.local/share/whisper
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+```
 
 ### Python Example
 
 ```bash
+# Show all options
+python examples/transcribe.py -h
+
+# Basic transcription (auto-detects language)
 python examples/transcribe.py recording.wav
-python examples/transcribe.py --config examples/config.toml recording.wav
+
+# Specify language (improves accuracy)
+python examples/transcribe.py --language he recording.wav
+python examples/transcribe.py --language en recording.wav
+
+# Specify model
+python examples/transcribe.py --model small recording.wav
+python examples/transcribe.py --model /path/to/model.bin recording.wav
+
+# Multiple speakers (diarization)
+python examples/transcribe.py --speaker_count 2 recording.wav
+
+# Skip audio conversion cache
+python examples/transcribe.py --nocache recording.mp3
+
+# Cache management
+python examples/transcribe.py --cache-info
+python examples/transcribe.py --clear-cache
+
+# List available models
+python examples/transcribe.py --list-models
 ```
+
+**Options** (names match Rust `TranscriptionConfig` fields):
+
+| Option | Description |
+|--------|-------------|
+| `--language CODE` | Language hint (ISO 639-1, e.g., `he`, `en`). Auto-detects if not specified. |
+| `--speaker_count N` | Expected number of speakers for diarization |
+| `--word_timestamps` | Enable word-level timestamps |
+| `--model NAME` | Model file or name (e.g., `small`, `ggml-small.bin`, or full path) |
+| `--nocache` | Skip audio conversion cache (always convert fresh) |
+| `--config PATH` | Path to config.toml |
+
+**Model Selection Priority:**
+1. `--model` command-line argument (highest priority)
+2. `model_path` from config.toml
+3. Auto-select best available model from `~/.local/share/whisper/`
+
+When auto-selecting, larger models are preferred for better multilingual support.
 
 ### PHP Example
 
@@ -339,23 +381,138 @@ POST /transcribe
 
 This is the recommended approach for production systems that need to call VoiceTranscription from multiple languages or services.
 
-## Downloading Whisper Models
+## Whisper Models
 
-The LocalWhisper backend requires a GGML-format Whisper model. Download from:
+The LocalWhisper backend requires a GGML-format Whisper model.
+
+### Model Comparison
+
+| Model | Size | Parameters | English Quality | Multilingual Quality | Relative Speed |
+|-------|------|------------|-----------------|----------------------|----------------|
+| tiny | ~75MB | 39M | Good | Poor | ~10x |
+| base | ~150MB | 74M | Very Good | Fair | ~7x |
+| small | ~500MB | 244M | Excellent | Good | ~4x |
+| medium | ~1.5GB | 769M | Excellent | Very Good | ~2x |
+| large-v3 | ~3GB | 1550M | Excellent | Excellent | 1x |
+
+### Recommended Storage Location
+
+Store models in `~/.local/share/whisper/` for shared access across projects:
 
 ```bash
-# Base model (~150MB, good balance of speed/accuracy)
-wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
-
-# Small model (~500MB, better accuracy)
-wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
-
-# Medium model (~1.5GB, even better accuracy)
-wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
-
-# Large model (~3GB, best accuracy)
-wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin
+mkdir -p ~/.local/share/whisper
 ```
+
+### Download Commands
+
+```bash
+# Tiny model (~75MB) - fastest, English-only recommended
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+
+# Base model (~150MB) - good for English
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+
+# Small model (~500MB) - minimum recommended for non-English
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+
+# Medium model (~1.5GB) - good balance for multilingual
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
+
+# Large-v3 model (~3GB) - best accuracy
+wget -P ~/.local/share/whisper/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin
+```
+
+## Language Support
+
+Whisper supports 99 languages, but performance varies significantly by language and model size. Below are recommendations for specific languages.
+
+### Arabic
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Poor | High error rate, not recommended |
+| small | Fair | Usable for simple content |
+| medium | Good | Recommended minimum |
+| large-v3 | Very Good | Best for Arabic; handles dialects better |
+
+Arabic's right-to-left script and dialectal variations benefit significantly from larger models. Use `language="ar"` to avoid misdetection.
+
+### Chinese
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Poor | Struggles with tones and characters |
+| small | Fair | Basic recognition |
+| medium | Good | Handles Mandarin well |
+| large-v3 | Very Good | Best for mixed Mandarin/Cantonese |
+
+Chinese requires larger models due to tonal distinctions and character complexity. Use `language="zh"` for Mandarin.
+
+### English
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny | Good | Suitable for clear speech |
+| base | Very Good | Good balance of speed/accuracy |
+| small | Excellent | Handles accents well |
+| medium/large | Excellent | Diminishing returns for most use cases |
+
+English has the best support across all models. Even tiny/base models perform well for clear audio.
+
+### French
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Fair | Basic recognition |
+| small | Good | Handles standard French well |
+| medium | Very Good | Good with accents and liaisons |
+| large-v3 | Excellent | Best for Canadian French, dialects |
+
+French performs well from the small model up. Use `language="fr"` for best results.
+
+### Greek
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Poor | Limited training data |
+| small | Fair | Basic modern Greek |
+| medium | Good | Recommended minimum |
+| large-v3 | Very Good | Best accuracy for Greek |
+
+Greek has less training data than major European languages. Use medium or larger for reliable results. Use `language="el"`.
+
+### Hebrew
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Poor | High error rate |
+| small | Good | Minimum recommended |
+| medium | Very Good | Good balance |
+| large-v3 | Excellent | Best for Hebrew |
+
+Hebrew's right-to-left script and lack of written vowels make it challenging. Use at least the small model. Use `language="he"` (or `"iw"` for legacy systems).
+
+### Russian
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Fair | Basic Cyrillic recognition |
+| small | Good | Handles standard Russian |
+| medium | Very Good | Good with regional accents |
+| large-v3 | Excellent | Best overall |
+
+Russian performs reasonably well from small model up due to good training data. Use `language="ru"`.
+
+### Spanish
+
+| Model | Quality | Notes |
+|-------|---------|-------|
+| tiny/base | Fair | Basic recognition |
+| small | Good | Handles Castilian well |
+| medium | Very Good | Good with Latin American variants |
+| large-v3 | Excellent | Best for all dialects |
+
+Spanish has strong support due to abundant training data. Use `language="es"` for best results.
 
 ## API Reference
 

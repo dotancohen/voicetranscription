@@ -22,3 +22,24 @@ speaker_count = 1
 # HuggingFace token (for diarization models)
 # Get your token from: https://huggingface.co/settings/tokens
 token = ""
+
+[google]
+# Path to your Google Cloud service account key file
+GOOGLE_APPLICATION_CREDENTIALS = ""
+# Your Google Cloud project ID
+GOOGLE_CLOUD_PROJECT_ID = ""
+# Speech model to use
+GOOGLE_SPEECH_MODEL = "chirp_3"
+# Default language for transcription
+GOOGLE_SPEECH_LANGUAGE = "en-US"
+# Audio sample rate (Hz)
+GOOGLE_SPEECH_SAMPLE_RATE = 16000
+# Google Cloud region/location for Speech API
+GOOGLE_SPEECH_LOCATION = "us"
+# Batch transcription timeout in seconds
+GOOGLE_SPEECH_BATCH_TIMEOUT = 1800
+
+[assemblyai]
+# AssemblyAI Configuration
+# Get your API key from https://www.assemblyai.com/
+ASSEMBLYAI_API_KEY = ""
