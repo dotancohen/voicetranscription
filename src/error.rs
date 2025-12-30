@@ -29,6 +29,10 @@ pub enum TranscriptionError {
     #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
 
+    /// Audio conversion failed.
+    #[error("Audio conversion failed: {0}")]
+    ConversionFailed(String),
+
     /// An I/O error occurred.
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
@@ -79,6 +83,12 @@ mod tests {
     fn test_error_display_invalid_config() {
         let err = TranscriptionError::InvalidConfig("missing model path".to_string());
         assert_eq!(err.to_string(), "Invalid configuration: missing model path");
+    }
+
+    #[test]
+    fn test_error_display_conversion_failed() {
+        let err = TranscriptionError::ConversionFailed("ffmpeg not found".to_string());
+        assert_eq!(err.to_string(), "Audio conversion failed: ffmpeg not found");
     }
 
     #[test]

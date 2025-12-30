@@ -3,9 +3,10 @@
 use async_trait::async_trait;
 use std::path::Path;
 use std::sync::Mutex;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
+use crate::audio::AudioConverter;
 use crate::backend::{BackendConfig, TranscriptionBackend};
 use crate::error::{Result, TranscriptionError};
 use crate::types::{Segment, TranscriptionConfig, TranscriptionResult};
@@ -18,6 +19,7 @@ pub struct LocalWhisperBackend {
     context: Mutex<Option<WhisperContext>>,
     model_path: String,
     ready: bool,
+    audio_converter: AudioConverter,
 }
 
 impl LocalWhisperBackend {
@@ -45,6 +47,7 @@ impl LocalWhisperBackend {
             context: Mutex::new(None),
             model_path,
             ready: true,
+            audio_converter: AudioConverter::new(),
         })
     }
 
@@ -168,11 +171,21 @@ impl TranscriptionBackend for LocalWhisperBackend {
             ));
         }
 
+        // Prepare audio (convert if necessary)
+        let prepared = self.audio_converter.prepare(audio_path, config.nocache)?;
+
+        if prepared.was_converted {
+            warn!(
+                "Audio was converted and cached. The cache at {:?} should be cleared periodically.",
+                self.audio_converter.cache_dir()
+            );
+        }
+
         // Ensure model is loaded
         self.ensure_context()?;
 
-        // Read audio samples
-        let samples = Self::read_audio_file(audio_path)?;
+        // Read audio samples from the prepared file
+        let samples = Self::read_audio_file(&prepared.path)?;
 
         // Run transcription in a blocking task to avoid blocking the async runtime
         let context_guard = self.context.lock().map_err(|e| {

@@ -46,6 +46,7 @@
 //! }
 //! ```
 
+pub mod audio;
 pub mod backend;
 pub mod backends;
 pub mod client;

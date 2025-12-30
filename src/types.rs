@@ -122,6 +122,8 @@ pub struct TranscriptionConfig {
     pub word_timestamps: bool,
     /// Model name or path (backend-specific).
     pub model: Option<String>,
+    /// Skip audio conversion cache (always convert fresh).
+    pub nocache: bool,
 }
 
 impl TranscriptionConfig {
@@ -151,6 +153,12 @@ impl TranscriptionConfig {
     /// Set the model name or path.
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Skip audio conversion cache (always convert fresh).
+    pub fn with_nocache(mut self) -> Self {
+        self.nocache = true;
         self
     }
 }
@@ -268,6 +276,7 @@ mod tests {
         assert!(config.speaker_count.is_none());
         assert!(!config.word_timestamps);
         assert!(config.model.is_none());
+        assert!(!config.nocache);
     }
 
     #[test]
@@ -277,6 +286,7 @@ mod tests {
         assert!(config.speaker_count.is_none());
         assert!(!config.word_timestamps);
         assert!(config.model.is_none());
+        assert!(!config.nocache);
     }
 
     #[test]
@@ -304,16 +314,24 @@ mod tests {
     }
 
     #[test]
+    fn test_transcription_config_with_nocache() {
+        let config = TranscriptionConfig::new().with_nocache();
+        assert!(config.nocache);
+    }
+
+    #[test]
     fn test_transcription_config_builder_chain() {
         let config = TranscriptionConfig::new()
             .with_language("he")
             .with_speaker_count(2)
             .with_word_timestamps()
-            .with_model("base");
+            .with_model("base")
+            .with_nocache();
         assert_eq!(config.language, Some("he".to_string()));
         assert_eq!(config.speaker_count, Some(2));
         assert!(config.word_timestamps);
         assert_eq!(config.model, Some("base".to_string()));
+        assert!(config.nocache);
     }
 
     #[test]
