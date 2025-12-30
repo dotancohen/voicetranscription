@@ -1,0 +1,24 @@
+# VoiceTranscription Configuration
+
+[whisper]
+# Path to the GGML Whisper model file
+# Download from: https://huggingface.co/ggerganov/whisper.cpp/tree/main
+model_path = "/path/to/ggml-base.bin"
+
+# Model size: tiny, base, small, medium, large
+# Only used if model_path is not specified (for future auto-download feature)
+model_size = "base"
+
+[transcription]
+# Default language (ISO 639-1 code, e.g., "en", "he")
+# Leave empty for auto-detection
+language = ""
+
+# Expected number of speakers (for diarization)
+# Set to 1 to disable diarization
+speaker_count = 1
+
+[huggingface]
+# HuggingFace token (for diarization models)
+# Get your token from: https://huggingface.co/settings/tokens
+token = ""

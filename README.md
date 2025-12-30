@@ -280,6 +280,65 @@ result.segments.forEach { segment ->
 }
 ```
 
+## Example Applications
+
+The `examples/` directory contains ready-to-use example applications with TOML configuration.
+
+### Setup
+
+1. Build the Python bindings:
+   ```bash
+   cd bindings/python
+   maturin develop
+   ```
+
+2. Download a Whisper model and update `examples/config.toml`:
+   ```toml
+   [whisper]
+   model_path = "/path/to/ggml-base.bin"
+   ```
+
+### Python Example
+
+```bash
+python examples/transcribe.py recording.wav
+python examples/transcribe.py --config examples/config.toml recording.wav
+```
+
+### PHP Example
+
+```bash
+php examples/transcribe.php recording.wav
+php examples/transcribe.php --config examples/config.toml recording.wav
+```
+
+**Note:** The PHP example invokes a Python helper script (`transcribe_helper.py`) as a subprocess, since native PHP bindings are not yet available. This approach works well for development and low-volume use cases.
+
+**For production PHP deployments**, consider one of these alternatives:
+
+1. **REST API**: Wrap VoiceTranscription in a lightweight HTTP server (see below)
+2. **PHP FFI**: Create C-compatible bindings that PHP can call directly via FFI
+3. **Message Queue**: Use a job queue where Python/Rust workers process transcription requests
+
+### REST API Integration
+
+VoiceTranscription can be wrapped in a REST API server, allowing any language to use it via HTTP. A Rust implementation using `axum`, `actix-web`, or `warp` would provide:
+
+- Language-agnostic access (PHP, JavaScript, Go, Java, etc.)
+- Horizontal scaling with multiple worker instances
+- Easy deployment as a microservice
+- Built-in request queuing and rate limiting
+
+Example endpoint design:
+```
+POST /transcribe
+  Body: multipart/form-data with audio file
+  Query: ?language=en&speakers=2
+  Response: JSON TranscriptionResult
+```
+
+This is the recommended approach for production systems that need to call VoiceTranscription from multiple languages or services.
+
 ## Downloading Whisper Models
 
 The LocalWhisper backend requires a GGML-format Whisper model. Download from:
