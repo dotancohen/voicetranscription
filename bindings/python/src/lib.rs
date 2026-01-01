@@ -9,6 +9,11 @@ use ::voice_transcription::{
     audio::{get_cache_info as core_get_cache_info, clear_cache as core_clear_cache},
     backends::LocalWhisperBackend, BackendConfig, TranscriptionClient as CoreClient,
     TranscriptionConfig as CoreConfig, Segment as CoreSegment, TranscriptionResult as CoreResult,
+    HasProviderSchema,
+    schema::{
+        OptionType as CoreOptionType, OptionValue as CoreOptionValue,
+        ProviderOption as CoreProviderOption, ProviderSchema as CoreProviderSchema,
+    },
 };
 
 /// A segment of transcribed audio.
@@ -343,15 +348,153 @@ fn clear_cache() -> PyResult<usize> {
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to clear cache: {}", e)))
 }
 
+// ============================================================================
+// Provider Schema Types
+// ============================================================================
+
+/// A value option for Select-type options.
+#[pyclass]
+#[derive(Clone)]
+pub struct OptionValue {
+    #[pyo3(get)]
+    pub value: String,
+    #[pyo3(get)]
+    pub label: String,
+}
+
+#[pymethods]
+impl OptionValue {
+    fn __repr__(&self) -> String {
+        format!("OptionValue(value={:?}, label={:?})", self.value, self.label)
+    }
+}
+
+impl From<CoreOptionValue> for OptionValue {
+    fn from(v: CoreOptionValue) -> Self {
+        Self {
+            value: v.value,
+            label: v.label,
+        }
+    }
+}
+
+/// A configurable option for a transcription provider.
+#[pyclass]
+#[derive(Clone)]
+pub struct ProviderOption {
+    #[pyo3(get)]
+    pub id: String,
+    #[pyo3(get)]
+    pub label: String,
+    #[pyo3(get)]
+    pub option_type: String,
+    #[pyo3(get)]
+    pub required: bool,
+    #[pyo3(get)]
+    pub default: String,
+    #[pyo3(get)]
+    pub values: Vec<OptionValue>,
+    #[pyo3(get)]
+    pub description: Option<String>,
+}
+
+#[pymethods]
+impl ProviderOption {
+    fn __repr__(&self) -> String {
+        format!(
+            "ProviderOption(id={:?}, label={:?}, type={:?})",
+            self.id, self.label, self.option_type
+        )
+    }
+}
+
+impl From<CoreProviderOption> for ProviderOption {
+    fn from(o: CoreProviderOption) -> Self {
+        let option_type = match o.option_type {
+            CoreOptionType::Text => "text",
+            CoreOptionType::Number => "number",
+            CoreOptionType::Select => "select",
+            CoreOptionType::Checkbox => "checkbox",
+            CoreOptionType::Path => "path",
+        }
+        .to_string();
+
+        Self {
+            id: o.id,
+            label: o.label,
+            option_type,
+            required: o.required,
+            default: o.default,
+            values: o.values.into_iter().map(|v| v.into()).collect(),
+            description: o.description,
+        }
+    }
+}
+
+/// Schema describing a transcription provider's configurable options.
+#[pyclass]
+#[derive(Clone)]
+pub struct ProviderSchema {
+    #[pyo3(get)]
+    pub provider_id: String,
+    #[pyo3(get)]
+    pub provider_name: String,
+    #[pyo3(get)]
+    pub options: Vec<ProviderOption>,
+}
+
+#[pymethods]
+impl ProviderSchema {
+    fn __repr__(&self) -> String {
+        format!(
+            "ProviderSchema(id={:?}, name={:?}, options={})",
+            self.provider_id,
+            self.provider_name,
+            self.options.len()
+        )
+    }
+}
+
+impl From<CoreProviderSchema> for ProviderSchema {
+    fn from(s: CoreProviderSchema) -> Self {
+        Self {
+            provider_id: s.provider_id,
+            provider_name: s.provider_name,
+            options: s.options.into_iter().map(|o| o.into()).collect(),
+        }
+    }
+}
+
+/// Get all available provider schemas.
+///
+/// Returns:
+///     List of ProviderSchema objects describing each available provider.
+#[pyfunction]
+fn get_provider_schemas() -> Vec<ProviderSchema> {
+    vec![
+        LocalWhisperBackend::get_provider_schema().into(),
+    ]
+}
+
 /// VoiceTranscription Python module.
 #[pymodule]
 fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Transcription types
     m.add_class::<Segment>()?;
     m.add_class::<TranscriptionResult>()?;
     m.add_class::<TranscriptionConfig>()?;
     m.add_class::<TranscriptionClient>()?;
+
+    // Cache management
     m.add_class::<CacheInfo>()?;
     m.add_function(wrap_pyfunction!(get_cache_info, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
+
+    // Provider schema types
+    m.add_class::<OptionValue>()?;
+    m.add_class::<ProviderOption>()?;
+    m.add_class::<ProviderSchema>()?;
+    m.add_function(wrap_pyfunction!(get_provider_schemas, m)?)?;
+
     Ok(())
 }
