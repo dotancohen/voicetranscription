@@ -53,5 +53,15 @@ async-trait = { workspace = true }
 sha2 = "0.10"
 dirs = "5"
 
+# Cloud backends (optional)
+reqwest = { version = "0.12", features = ["json", "multipart"], optional = true }
+
+[features]
+default = ["local_whisper"]
+local_whisper = []
+assemblyai = ["reqwest"]
+google_cloud = ["reqwest"]
+all_backends = ["local_whisper", "assemblyai", "google_cloud"]
+
 [dev-dependencies]
 tempfile = "3"

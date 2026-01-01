@@ -7,7 +7,7 @@ use tokio::runtime::Runtime;
 
 use ::voice_transcription::{
     audio::{get_cache_info as core_get_cache_info, clear_cache as core_clear_cache},
-    backends::LocalWhisperBackend, BackendConfig, TranscriptionClient as CoreClient,
+    BackendConfig, TranscriptionClient as CoreClient,
     TranscriptionConfig as CoreConfig, Segment as CoreSegment, TranscriptionResult as CoreResult,
     HasProviderSchema,
     schema::{
@@ -15,6 +15,15 @@ use ::voice_transcription::{
         ProviderOption as CoreProviderOption, ProviderSchema as CoreProviderSchema,
     },
 };
+
+#[cfg(feature = "local_whisper")]
+use ::voice_transcription::backends::LocalWhisperBackend;
+
+#[cfg(feature = "assemblyai")]
+use ::voice_transcription::backends::AssemblyAIBackend;
+
+#[cfg(feature = "google_cloud")]
+use ::voice_transcription::backends::GoogleCloudBackend;
 
 /// A segment of transcribed audio.
 #[pyclass]
@@ -181,12 +190,86 @@ impl TranscriptionClient {
     ///
     /// Raises:
     ///     RuntimeError: If the model cannot be loaded.
+    #[cfg(feature = "local_whisper")]
     #[staticmethod]
     #[pyo3(signature = (model_path))]
     fn with_local_whisper(model_path: &str) -> PyResult<Self> {
         let backend_config = BackendConfig::new().with_model_path(model_path);
 
         let backend = LocalWhisperBackend::new(backend_config)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create backend: {}", e)))?;
+
+        let runtime = Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+
+        Ok(Self {
+            client: Arc::new(CoreClient::new(backend)),
+            runtime: Arc::new(runtime),
+        })
+    }
+
+    /// Create a new TranscriptionClient with the AssemblyAI backend.
+    ///
+    /// Args:
+    ///     api_key: Your AssemblyAI API key.
+    ///
+    /// Returns:
+    ///     A new TranscriptionClient instance.
+    ///
+    /// Raises:
+    ///     RuntimeError: If the backend cannot be initialized.
+    #[cfg(feature = "assemblyai")]
+    #[staticmethod]
+    #[pyo3(signature = (api_key))]
+    fn with_assemblyai(api_key: &str) -> PyResult<Self> {
+        let backend_config = BackendConfig::new().with_api_key(api_key);
+
+        let backend = AssemblyAIBackend::new(backend_config)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create backend: {}", e)))?;
+
+        let runtime = Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+
+        Ok(Self {
+            client: Arc::new(CoreClient::new(backend)),
+            runtime: Arc::new(runtime),
+        })
+    }
+
+    /// Create a new TranscriptionClient with the Google Cloud Speech backend.
+    ///
+    /// Args:
+    ///     access_token: Google Cloud access token (from `gcloud auth print-access-token`).
+    ///     project_id: Your Google Cloud project ID.
+    ///     location: Optional region (default: us-central1).
+    ///     model: Optional model name (default: chirp).
+    ///
+    /// Returns:
+    ///     A new TranscriptionClient instance.
+    ///
+    /// Raises:
+    ///     RuntimeError: If the backend cannot be initialized.
+    #[cfg(feature = "google_cloud")]
+    #[staticmethod]
+    #[pyo3(signature = (access_token, project_id, location=None, model=None))]
+    fn with_google_cloud(
+        access_token: &str,
+        project_id: &str,
+        location: Option<&str>,
+        model: Option<&str>,
+    ) -> PyResult<Self> {
+        let mut backend_config = BackendConfig::new()
+            .with_api_key(access_token)
+            .with_option("project_id", project_id);
+
+        if let Some(loc) = location {
+            backend_config = backend_config.with_option("location", loc);
+        }
+        if let Some(m) = model {
+            backend_config = backend_config.with_model_name(m);
+        }
+
+        let backend = GoogleCloudBackend::new(backend_config)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create backend: {}", e)))?;
 
         let runtime = Runtime::new()
@@ -471,9 +554,38 @@ impl From<CoreProviderSchema> for ProviderSchema {
 ///     List of ProviderSchema objects describing each available provider.
 #[pyfunction]
 fn get_provider_schemas() -> Vec<ProviderSchema> {
-    vec![
-        LocalWhisperBackend::get_provider_schema().into(),
-    ]
+    let mut schemas = Vec::new();
+
+    #[cfg(feature = "local_whisper")]
+    schemas.push(LocalWhisperBackend::get_provider_schema().into());
+
+    #[cfg(feature = "assemblyai")]
+    schemas.push(AssemblyAIBackend::get_provider_schema().into());
+
+    #[cfg(feature = "google_cloud")]
+    schemas.push(GoogleCloudBackend::get_provider_schema().into());
+
+    schemas
+}
+
+/// Get a list of available backend names.
+///
+/// Returns:
+///     List of backend identifiers that are available.
+#[pyfunction]
+fn get_available_backends() -> Vec<String> {
+    let mut backends = Vec::new();
+
+    #[cfg(feature = "local_whisper")]
+    backends.push("local_whisper".to_string());
+
+    #[cfg(feature = "assemblyai")]
+    backends.push("assemblyai".to_string());
+
+    #[cfg(feature = "google_cloud")]
+    backends.push("google_cloud".to_string());
+
+    backends
 }
 
 /// VoiceTranscription Python module.
@@ -495,6 +607,7 @@ fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ProviderOption>()?;
     m.add_class::<ProviderSchema>()?;
     m.add_function(wrap_pyfunction!(get_provider_schemas, m)?)?;
+    m.add_function(wrap_pyfunction!(get_available_backends, m)?)?;
 
     Ok(())
 }
