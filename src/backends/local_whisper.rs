@@ -9,6 +9,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use crate::audio::AudioConverter;
 use crate::backend::{BackendConfig, TranscriptionBackend};
 use crate::error::{Result, TranscriptionError};
+use crate::schema::{HasProviderSchema, OptionType, OptionValue, ProviderOption, ProviderSchema};
 use crate::language::{normalize_language_code, PROVIDER_LOCAL_WHISPER};
 use crate::types::{Segment, TranscriptionConfig, TranscriptionResult};
 
@@ -296,6 +297,37 @@ impl TranscriptionBackend for LocalWhisperBackend {
         );
 
         Ok(result)
+    }
+}
+
+impl HasProviderSchema for LocalWhisperBackend {
+    fn get_provider_schema() -> ProviderSchema {
+        ProviderSchema::new("local_whisper", "Local Whisper")
+            .with_option(
+                ProviderOption::new("model", "Model", OptionType::Select)
+                    .with_default("base")
+                    .with_values(vec![
+                        OptionValue::new("tiny", "tiny (75MB, fastest)"),
+                        OptionValue::new("tiny.en", "tiny.en (75MB, English only)"),
+                        OptionValue::new("base", "base (142MB, recommended)"),
+                        OptionValue::new("base.en", "base.en (142MB, English only)"),
+                        OptionValue::new("small", "small (466MB)"),
+                        OptionValue::new("small.en", "small.en (466MB, English only)"),
+                        OptionValue::new("medium", "medium (1.5GB)"),
+                        OptionValue::new("medium.en", "medium.en (1.5GB, English only)"),
+                        OptionValue::new("large-v3", "large-v3 (3GB, best quality)"),
+                        OptionValue::new("large-v3-turbo", "large-v3-turbo (1.6GB, fast + quality)"),
+                    ])
+                    .with_description(
+                        "Whisper model size. Larger models are more accurate but slower."
+                    ),
+            )
+            .with_option(
+                ProviderOption::new("model_path", "Custom Model Path", OptionType::Path)
+                    .with_description(
+                        "Path to a custom GGML model file. Overrides the model selection above."
+                    ),
+            )
     }
 }
 

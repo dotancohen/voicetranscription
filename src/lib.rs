@@ -51,6 +51,7 @@ pub mod backend;
 pub mod backends;
 pub mod client;
 pub mod error;
+pub mod schema;
 pub mod language;
 pub mod types;
 
@@ -85,4 +86,5 @@ pub fn enable_debug_logging() {
 pub use backend::{BackendConfig, TranscriptionBackend};
 pub use client::TranscriptionClient;
 pub use error::{Result, TranscriptionError};
+pub use schema::{HasProviderSchema, OptionType, OptionValue, ProviderOption, ProviderSchema};
 pub use types::{Segment, TranscriptionConfig, TranscriptionResult};

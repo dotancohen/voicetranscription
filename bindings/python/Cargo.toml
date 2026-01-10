@@ -14,3 +14,11 @@ crate-type = ["cdylib"]
 voice-transcription = { workspace = true }
 pyo3 = { workspace = true }
 tokio = { workspace = true }
+
+[features]
+default = ["local_whisper"]
+local_whisper = ["voice-transcription/local_whisper"]
+speechtext_ai = ["voice-transcription/speechtext_ai"]
+assemblyai = ["voice-transcription/assemblyai"]
+google_cloud = ["voice-transcription/google_cloud"]
+all_backends = ["local_whisper", "speechtext_ai", "assemblyai", "google_cloud"]

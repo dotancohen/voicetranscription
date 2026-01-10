@@ -15,6 +15,7 @@ use tracing::{debug, info};
 use crate::backend::{BackendConfig, TranscriptionBackend};
 use crate::error::{Result, TranscriptionError};
 use crate::language::{normalize_language_code, default_language_code, PROVIDER_SPEECHTEXT_AI};
+use crate::schema::{HasProviderSchema, OptionType, ProviderOption, ProviderSchema};
 use crate::types::{Segment, TranscriptionConfig, TranscriptionResult};
 
 /// SpeechText.AI API base URL.
@@ -563,6 +564,32 @@ impl TranscriptionBackend for SpeechTextAIBackend {
 
         // Poll for results
         self.poll_results(&task_id).await
+    }
+}
+
+impl HasProviderSchema for SpeechTextAIBackend {
+    fn get_provider_schema() -> ProviderSchema {
+        ProviderSchema::new("speechtext_ai", "SpeechText.AI")
+            .with_option(
+                ProviderOption::new("api_key", "API Key", OptionType::Text)
+                    .required()
+                    .with_description("Your SpeechText.AI API key from https://speechtext.ai/"),
+            )
+            .with_option(
+                ProviderOption::new("punctuation", "Punctuation", OptionType::Checkbox)
+                    .with_default("true")
+                    .with_description("Enable automatic punctuation in the transcription output."),
+            )
+            .with_option(
+                ProviderOption::new("summary", "Generate Summary", OptionType::Checkbox)
+                    .with_default("false")
+                    .with_description("Generate a summary of the transcribed content."),
+            )
+            .with_option(
+                ProviderOption::new("highlights", "Extract Highlights", OptionType::Checkbox)
+                    .with_default("false")
+                    .with_description("Extract key phrases and highlights from the content."),
+            )
     }
 }
 
