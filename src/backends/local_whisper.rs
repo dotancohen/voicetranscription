@@ -9,6 +9,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 use crate::audio::AudioConverter;
 use crate::backend::{BackendConfig, TranscriptionBackend};
 use crate::error::{Result, TranscriptionError};
+use crate::language::{normalize_language_code, PROVIDER_LOCAL_WHISPER};
 use crate::types::{Segment, TranscriptionConfig, TranscriptionResult};
 
 /// Local Whisper transcription backend.
@@ -196,13 +197,19 @@ impl TranscriptionBackend for LocalWhisperBackend {
             TranscriptionError::Other("Context not initialized".into())
         })?;
 
+        // Normalize language code before creating params (needs to outlive params)
+        let normalized_language = config.language.as_ref().map(|lang| {
+            let normalized = normalize_language_code(lang, PROVIDER_LOCAL_WHISPER);
+            debug!("Set transcription language to: {} (normalized from {})", normalized, lang);
+            normalized
+        });
+
         // Set up parameters
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
-        // Set language if specified
-        if let Some(ref lang) = config.language {
+        // Set language if specified (normalize to ISO 639-1 format for Whisper)
+        if let Some(ref lang) = normalized_language {
             params.set_language(Some(lang.as_str()));
-            debug!("Set transcription language to: {}", lang);
         } else {
             params.set_language(None); // Auto-detect
             debug!("Using automatic language detection");

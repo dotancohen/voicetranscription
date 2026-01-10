@@ -51,7 +51,35 @@ pub mod backend;
 pub mod backends;
 pub mod client;
 pub mod error;
+pub mod language;
 pub mod types;
+
+use std::sync::Once;
+use tracing_subscriber::EnvFilter;
+
+static TRACING_INIT: Once = Once::new();
+
+/// Initialize debug logging for transcription operations.
+///
+/// This enables detailed logging of HTTP requests and responses,
+/// which is useful for debugging API issues.
+///
+/// Call this before any transcription operations to see debug output.
+/// Multiple calls are safe - only the first call has an effect.
+pub fn enable_debug_logging() {
+    TRACING_INIT.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| EnvFilter::new("voice_transcription=debug"))
+            )
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_file(false)
+            .with_line_number(false)
+            .init();
+    });
+}
 
 // Re-export main types at crate root for convenience
 pub use backend::{BackendConfig, TranscriptionBackend};

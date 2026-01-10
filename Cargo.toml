@@ -15,12 +15,13 @@ repository = "https://github.com/dotancohen/VoiceTranscription"
 
 [workspace.dependencies]
 # Core dependencies
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time", "fs"] }
 thiserror = "1"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "native-tls"] }
 
 # Whisper
 whisper-rs = "0.12"
@@ -46,10 +47,12 @@ description = "Core transcription library with pluggable backends"
 tokio = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 whisper-rs = { workspace = true }
 async-trait = { workspace = true }
+reqwest = { workspace = true }
 sha2 = "0.10"
 dirs = "5"
 

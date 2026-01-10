@@ -7,7 +7,9 @@ use tokio::runtime::Runtime;
 
 use ::voice_transcription::{
     audio::{get_cache_info as core_get_cache_info, clear_cache as core_clear_cache},
-    backends::LocalWhisperBackend, BackendConfig, TranscriptionClient as CoreClient,
+    backends::{LocalWhisperBackend, SpeechTextAIBackend, SpeechTextAIOptions as CoreSpeechTextAIOptions},
+    enable_debug_logging as core_enable_debug_logging,
+    BackendConfig, TranscriptionClient as CoreClient,
     TranscriptionConfig as CoreConfig, Segment as CoreSegment, TranscriptionResult as CoreResult,
 };
 
@@ -157,6 +159,67 @@ impl From<&TranscriptionConfig> for CoreConfig {
     }
 }
 
+/// Options specific to SpeechText.AI transcription provider.
+#[pyclass]
+#[derive(Clone)]
+pub struct SpeechTextAIOptions {
+    #[pyo3(get)]
+    pub punctuation: bool,
+    #[pyo3(get)]
+    pub summary: bool,
+    #[pyo3(get)]
+    pub highlights: bool,
+    #[pyo3(get)]
+    pub number_of_speakers: u32,
+    #[pyo3(get)]
+    pub caption_output: Option<String>,
+    #[pyo3(get)]
+    pub custom_vocabulary: Vec<String>,
+}
+
+#[pymethods]
+impl SpeechTextAIOptions {
+    #[new]
+    #[pyo3(signature = (punctuation=true, summary=false, highlights=false, number_of_speakers=0, caption_output=None, custom_vocabulary=None))]
+    fn new(
+        punctuation: bool,
+        summary: bool,
+        highlights: bool,
+        number_of_speakers: u32,
+        caption_output: Option<String>,
+        custom_vocabulary: Option<Vec<String>>,
+    ) -> Self {
+        Self {
+            punctuation,
+            summary,
+            highlights,
+            number_of_speakers,
+            caption_output,
+            custom_vocabulary: custom_vocabulary.unwrap_or_default(),
+        }
+    }
+
+    /// Convert options to JSON string.
+    fn to_json(&self) -> String {
+        let core_opts = CoreSpeechTextAIOptions {
+            punctuation: self.punctuation,
+            summary: self.summary,
+            highlights: self.highlights,
+            number_of_speakers: self.number_of_speakers,
+            caption_output: self.caption_output.clone(),
+            custom_vocabulary: self.custom_vocabulary.clone(),
+        };
+        core_opts.to_json()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SpeechTextAIOptions(punctuation={}, summary={}, highlights={}, speakers={})",
+            self.punctuation, self.summary, self.highlights, self.number_of_speakers
+        )
+    }
+}
+
 /// Transcription client for audio transcription.
 #[pyclass]
 pub struct TranscriptionClient {
@@ -182,6 +245,45 @@ impl TranscriptionClient {
         let backend_config = BackendConfig::new().with_model_path(model_path);
 
         let backend = LocalWhisperBackend::new(backend_config)
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create backend: {}", e)))?;
+
+        let runtime = Runtime::new()
+            .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
+
+        Ok(Self {
+            client: Arc::new(CoreClient::new(backend)),
+            runtime: Arc::new(runtime),
+        })
+    }
+
+    /// Create a new TranscriptionClient with SpeechText.AI cloud backend.
+    ///
+    /// Args:
+    ///     api_key: SpeechText.AI API key.
+    ///     punctuation: Enable punctuation (default: True).
+    ///     summary: Generate summary (default: False).
+    ///     highlights: Extract highlights (default: False).
+    ///
+    /// Returns:
+    ///     A new TranscriptionClient instance.
+    ///
+    /// Raises:
+    ///     RuntimeError: If the backend cannot be created.
+    #[staticmethod]
+    #[pyo3(signature = (api_key, punctuation=true, summary=false, highlights=false))]
+    fn with_speechtext_ai(
+        api_key: &str,
+        punctuation: bool,
+        summary: bool,
+        highlights: bool,
+    ) -> PyResult<Self> {
+        let backend_config = BackendConfig::new()
+            .with_api_key(api_key)
+            .with_option("punctuation", if punctuation { "true" } else { "false" })
+            .with_option("summary", if summary { "true" } else { "false" })
+            .with_option("highlights", if highlights { "true" } else { "false" });
+
+        let backend = SpeechTextAIBackend::new(backend_config)
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create backend: {}", e)))?;
 
         let runtime = Runtime::new()
@@ -343,6 +445,18 @@ fn clear_cache() -> PyResult<usize> {
         .map_err(|e| PyRuntimeError::new_err(format!("Failed to clear cache: {}", e)))
 }
 
+/// Enable debug logging for transcription operations.
+///
+/// This enables detailed logging of HTTP requests and responses,
+/// which is useful for debugging API issues with cloud providers.
+///
+/// Call this before any transcription operations to see debug output.
+/// Multiple calls are safe - only the first call has an effect.
+#[pyfunction]
+fn enable_debug_logging() {
+    core_enable_debug_logging();
+}
+
 /// VoiceTranscription Python module.
 #[pymodule]
 fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -350,8 +464,10 @@ fn voice_transcription(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<TranscriptionResult>()?;
     m.add_class::<TranscriptionConfig>()?;
     m.add_class::<TranscriptionClient>()?;
+    m.add_class::<SpeechTextAIOptions>()?;
     m.add_class::<CacheInfo>()?;
     m.add_function(wrap_pyfunction!(get_cache_info, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(enable_debug_logging, m)?)?;
     Ok(())
 }

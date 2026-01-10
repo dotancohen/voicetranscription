@@ -33,6 +33,14 @@ pub enum TranscriptionError {
     #[error("Audio conversion failed: {0}")]
     ConversionFailed(String),
 
+    /// API request failed.
+    #[error("API error: {0}")]
+    ApiError(String),
+
+    /// API timeout while polling for results.
+    #[error("API timeout: {0}")]
+    ApiTimeout(String),
+
     /// An I/O error occurred.
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
