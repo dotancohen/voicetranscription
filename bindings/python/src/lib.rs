@@ -28,7 +28,6 @@ use ::voice_transcription::backends::AssemblyAIBackend;
 
 #[cfg(feature = "google_cloud")]
 use ::voice_transcription::backends::GoogleCloudBackend;
-
 /// A segment of transcribed audio.
 #[pyclass]
 #[derive(Clone)]

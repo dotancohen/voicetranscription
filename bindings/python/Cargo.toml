@@ -15,6 +15,7 @@ voice-transcription = { workspace = true }
 pyo3 = { workspace = true }
 tokio = { workspace = true }
 
+
 [features]
 default = ["local_whisper"]
 local_whisper = ["voice-transcription/local_whisper"]

@@ -15,6 +15,7 @@ mod google_cloud;
 #[cfg(feature = "local_whisper")]
 pub use local_whisper::LocalWhisperBackend;
 
+
 #[cfg(feature = "speechtext_ai")]
 pub use speechtext_ai::{SpeechTextAIBackend, SpeechTextAIOptions};
 
@@ -23,4 +24,3 @@ pub use assemblyai::AssemblyAIBackend;
 
 #[cfg(feature = "google_cloud")]
 pub use google_cloud::GoogleCloudBackend;
-
