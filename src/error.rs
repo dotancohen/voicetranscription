@@ -45,6 +45,14 @@ pub enum TranscriptionError {
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
+    /// The user asked for the transcription to stop, and it stopped.
+    ///
+    /// This is not a failure: nothing is wrong with the audio or the model.
+    /// Callers should say "stopped", not "failed", and should not keep a
+    /// partial result.
+    #[error("Transcription stopped by the user")]
+    Cancelled,
+
     /// An unexpected error occurred.
     #[error("Unexpected error: {0}")]
     Other(String),

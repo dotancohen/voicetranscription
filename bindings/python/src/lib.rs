@@ -122,18 +122,20 @@ pub struct TranscriptionConfig {
     word_timestamps: bool,
     model: Option<String>,
     nocache: bool,
+    beam_size: Option<u32>,
 }
 
 #[pymethods]
 impl TranscriptionConfig {
     #[new]
-    #[pyo3(signature = (language=None, speaker_count=None, word_timestamps=false, model=None, nocache=false))]
+    #[pyo3(signature = (language=None, speaker_count=None, word_timestamps=false, model=None, nocache=false, beam_size=None))]
     fn new(
         language: Option<String>,
         speaker_count: Option<u32>,
         word_timestamps: bool,
         model: Option<String>,
         nocache: bool,
+        beam_size: Option<u32>,
     ) -> Self {
         Self {
             language,
@@ -141,6 +143,7 @@ impl TranscriptionConfig {
             word_timestamps,
             model,
             nocache,
+            beam_size,
         }
     }
 
@@ -169,6 +172,9 @@ impl From<&TranscriptionConfig> for CoreConfig {
         }
         if c.nocache {
             config = config.with_nocache();
+        }
+        if let Some(n) = c.beam_size {
+            config = config.with_beam_size(n);
         }
         config
     }
@@ -451,7 +457,7 @@ impl TranscriptionClient {
         audio_path: &str,
         language: &str,
     ) -> PyResult<TranscriptionResult> {
-        let config = TranscriptionConfig::new(Some(language.to_string()), None, false, None, false);
+        let config = TranscriptionConfig::new(Some(language.to_string()), None, false, None, false, None);
         self.transcribe(audio_path, Some(config))
     }
 

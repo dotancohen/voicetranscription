@@ -1,4 +1,10 @@
-//! Android/Kotlin bindings for VoiceTranscription via UniFFI.
+//! Android/Kotlin bindings for VoiceTranscription via UniFFI (proc-macro
+//! interface; the Kotlin side is generated from the compiled library with
+//! `uniffi-bindgen generate --library`).
+//!
+//! The Android app has no ffmpeg, so callers hand this crate audio that is
+//! already a 16 kHz mono 16-bit WAV file; anything else is rejected by the
+//! core library's converter.
 
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -8,10 +14,11 @@ use voice_transcription::{
     TranscriptionClient as CoreClient, TranscriptionConfig as CoreConfig,
 };
 
-uniffi::include_scaffolding!("voice_transcription");
+uniffi::setup_scaffolding!("voice_transcription");
 
 /// Error type for UniFFI bindings.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum TranscriptionError {
     #[error("File not found: {0}")]
     FileNotFound(String),
@@ -25,28 +32,36 @@ pub enum TranscriptionError {
     BackendNotAvailable(String),
     #[error("Invalid config: {0}")]
     InvalidConfig(String),
+    #[error("Audio conversion failed: {0}")]
+    ConversionFailed(String),
     #[error("I/O error: {0}")]
     IoError(String),
+    #[error("Transcription stopped by the user")]
+    Cancelled,
     #[error("Other error: {0}")]
     Other(String),
 }
 
 impl From<voice_transcription::TranscriptionError> for TranscriptionError {
     fn from(e: voice_transcription::TranscriptionError) -> Self {
+        use voice_transcription::TranscriptionError as E;
         match e {
-            voice_transcription::TranscriptionError::FileNotFound(s) => Self::FileNotFound(s),
-            voice_transcription::TranscriptionError::UnsupportedFormat(s) => Self::UnsupportedFormat(s),
-            voice_transcription::TranscriptionError::ModelLoadError(s) => Self::ModelLoadError(s),
-            voice_transcription::TranscriptionError::TranscriptionFailed(s) => Self::TranscriptionFailed(s),
-            voice_transcription::TranscriptionError::BackendNotAvailable(s) => Self::BackendNotAvailable(s),
-            voice_transcription::TranscriptionError::InvalidConfig(s) => Self::InvalidConfig(s),
-            voice_transcription::TranscriptionError::IoError(e) => Self::IoError(e.to_string()),
-            voice_transcription::TranscriptionError::Other(s) => Self::Other(s),
+            E::FileNotFound(s) => Self::FileNotFound(s),
+            E::UnsupportedFormat(s) => Self::UnsupportedFormat(s),
+            E::ModelLoadError(s) => Self::ModelLoadError(s),
+            E::TranscriptionFailed(s) => Self::TranscriptionFailed(s),
+            E::BackendNotAvailable(s) => Self::BackendNotAvailable(s),
+            E::InvalidConfig(s) => Self::InvalidConfig(s),
+            E::ConversionFailed(s) => Self::ConversionFailed(s),
+            E::ApiError(s) | E::ApiTimeout(s) => Self::Other(s),
+            E::IoError(e) => Self::IoError(e.to_string()),
+            E::Cancelled => Self::Cancelled,
+            E::Other(s) => Self::Other(s),
         }
     }
 }
 
-/// A segment of transcribed audio (UniFFI-compatible).
+/// A segment of transcribed audio.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct Segment {
     pub text: String,
@@ -68,7 +83,7 @@ impl From<voice_transcription::Segment> for Segment {
     }
 }
 
-/// The result of a transcription operation (UniFFI-compatible).
+/// The result of a transcription.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct TranscriptionResult {
     pub content: String,
@@ -92,13 +107,16 @@ impl From<voice_transcription::TranscriptionResult> for TranscriptionResult {
     }
 }
 
-/// Configuration for a transcription request (UniFFI-compatible).
+/// Configuration for one transcription request.
 #[derive(Debug, Clone, Default, uniffi::Record)]
 pub struct TranscriptionConfig {
+    /// ISO 639-1 code ("he", "en", "ar", "ru"); None = detect automatically.
     pub language: Option<String>,
     pub speaker_count: Option<u32>,
     pub word_timestamps: bool,
     pub model: Option<String>,
+    /// Beam search width; None or 1 = greedy, 5 = most accurate in practice.
+    pub beam_size: Option<u32>,
 }
 
 impl From<&TranscriptionConfig> for CoreConfig {
@@ -116,18 +134,47 @@ impl From<&TranscriptionConfig> for CoreConfig {
         if let Some(ref model) = c.model {
             config = config.with_model(model);
         }
+        if let Some(n) = c.beam_size {
+            config = config.with_beam_size(n);
+        }
         config
     }
 }
 
-/// Transcription client exposed to Kotlin via UniFFI.
+/// Transcription client exposed to Kotlin. One instance holds one loaded model.
 #[derive(uniffi::Object)]
 pub struct TranscriptionClient {
     client: Arc<CoreClient>,
     runtime: Runtime,
 }
 
-/// Create a new TranscriptionClient with a local Whisper backend.
+/// Ask the transcription that is running now to stop.
+///
+/// It stops between windows of audio, within a second or so, and the call
+/// that was running returns `Cancelled`. Nothing partial is kept. This is
+/// what the "Stop" button on the phone's notification calls.
+///
+/// The flag stays raised until [`clear_transcription_cancel`] lowers it, so
+/// a queue of files stops as a whole rather than one file at a time.
+#[uniffi::export]
+pub fn request_transcription_cancel() {
+    voice_transcription::request_cancel();
+}
+
+/// Lower the stop flag. Call this before starting a batch of work that
+/// should actually run.
+#[uniffi::export]
+pub fn clear_transcription_cancel() {
+    voice_transcription::clear_cancel();
+}
+
+/// Whether a stop has been asked for and not yet cleared.
+#[uniffi::export]
+pub fn transcription_cancel_requested() -> bool {
+    voice_transcription::cancel_requested()
+}
+
+/// Load a ggml Whisper model from `model_path` (a file the app downloaded).
 #[uniffi::export]
 pub fn create_local_whisper_client(model_path: String) -> Result<Arc<TranscriptionClient>, TranscriptionError> {
     let backend_config = BackendConfig::new().with_model_path(&model_path);
@@ -146,12 +193,12 @@ pub fn create_local_whisper_client(model_path: String) -> Result<Arc<Transcripti
 
 #[uniffi::export]
 impl TranscriptionClient {
-    /// Get the name of the current backend.
+    /// Name of the backend ("local_whisper").
     pub fn backend_name(&self) -> String {
         self.client.backend_name().to_string()
     }
 
-    /// Get the features supported by the current backend.
+    /// Features the backend supports.
     pub fn supported_features(&self) -> Vec<String> {
         self.client
             .supported_features()
@@ -160,12 +207,12 @@ impl TranscriptionClient {
             .collect()
     }
 
-    /// Check if the backend is ready to transcribe.
+    /// Whether the model is loaded and ready.
     pub fn is_ready(&self) -> bool {
         self.client.is_ready()
     }
 
-    /// Transcribe an audio file with default configuration.
+    /// Transcribe a 16 kHz mono WAV file with automatic language detection.
     pub fn transcribe(&self, audio_path: String) -> Result<TranscriptionResult, TranscriptionError> {
         let client = self.client.clone();
         let result = self
@@ -174,7 +221,7 @@ impl TranscriptionClient {
         Ok(result.into())
     }
 
-    /// Transcribe an audio file with custom configuration.
+    /// Transcribe with an explicit configuration (language, beam size, ...).
     pub fn transcribe_with_config(
         &self,
         audio_path: String,
@@ -188,7 +235,7 @@ impl TranscriptionClient {
         Ok(result.into())
     }
 
-    /// Transcribe an audio file with a specific language.
+    /// Transcribe in a given language (greedy decoding).
     pub fn transcribe_with_language(
         &self,
         audio_path: String,

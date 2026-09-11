@@ -124,6 +124,9 @@ pub struct TranscriptionConfig {
     pub model: Option<String>,
     /// Skip audio conversion cache (always convert fresh).
     pub nocache: bool,
+    /// Beam search width for backends that decode locally (Whisper).
+    /// None or 1 means greedy decoding; 5 is Whisper's usual "accurate" setting.
+    pub beam_size: Option<u32>,
 }
 
 impl TranscriptionConfig {
@@ -159,6 +162,12 @@ impl TranscriptionConfig {
     /// Skip audio conversion cache (always convert fresh).
     pub fn with_nocache(mut self) -> Self {
         self.nocache = true;
+        self
+    }
+
+    /// Decode with beam search of the given width (1 = greedy).
+    pub fn with_beam_size(mut self, beam_size: u32) -> Self {
+        self.beam_size = Some(beam_size);
         self
     }
 }

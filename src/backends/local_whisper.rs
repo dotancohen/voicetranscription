@@ -173,6 +173,12 @@ impl TranscriptionBackend for LocalWhisperBackend {
             ));
         }
 
+        // A stop asked for while the previous file was running applies to
+        // this one too: the user wanted the whole queue to stop.
+        if crate::cancel::cancel_requested() {
+            return Err(TranscriptionError::Cancelled);
+        }
+
         // Prepare audio (convert if necessary)
         let prepared = self.audio_converter.prepare(audio_path, config.nocache)?;
 
@@ -205,8 +211,17 @@ impl TranscriptionBackend for LocalWhisperBackend {
             normalized
         });
 
-        // Set up parameters
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        // Set up parameters: greedy by default, beam search when asked for
+        // (slower, noticeably more accurate on Hebrew and other non-English
+        // speech). Use every core; the default of four leaves most of a
+        // phone or workstation idle.
+        let strategy = match config.beam_size {
+            Some(n) if n > 1 => SamplingStrategy::BeamSearch { beam_size: n as i32, patience: -1.0 },
+            _ => SamplingStrategy::Greedy { best_of: 1 },
+        };
+        let mut params = FullParams::new(strategy);
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(16) as i32;
+        params.set_n_threads(threads);
 
         // Set language if specified (normalize to ISO 639-1 format for Whisper)
         if let Some(ref lang) = normalized_language {
@@ -219,12 +234,25 @@ impl TranscriptionBackend for LocalWhisperBackend {
         // Enable token timestamps for segment generation
         params.set_token_timestamps(true);
 
+        // Whisper asks this between windows of audio. Answering yes makes it
+        // return early, which is the only way to stop a transcription that
+        // has already started (see `crate::cancel`).
+        params.set_abort_callback_safe(|| crate::cancel::cancel_requested());
+
         // Create state and run inference
         let mut state = ctx.create_state().map_err(|e| {
             TranscriptionError::TranscriptionFailed(format!("Failed to create state: {}", e))
         })?;
 
-        state.full(params, &samples).map_err(|e| {
+        let inference = state.full(params, &samples);
+        if crate::cancel::cancel_requested() {
+            // Stopped on purpose. Whatever whisper returned is a fragment of
+            // the recording, so it is thrown away rather than stored as if
+            // it were the transcription.
+            info!("Transcription stopped at the user's request");
+            return Err(TranscriptionError::Cancelled);
+        }
+        inference.map_err(|e| {
             TranscriptionError::TranscriptionFailed(format!("Transcription failed: {}", e))
         })?;
 

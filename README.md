@@ -109,14 +109,58 @@ maturin build --release  # For distribution
 
 ### Build Android Bindings
 
-```bash
-# Install Android targets
-rustup target add aarch64-linux-android armv7-linux-androideabi
+whisper.cpp is compiled by CMake inside the `whisper-rs-sys` build script, so the
+NDK has to be handed to CMake as well as to cargo. `cargo ndk` sets the compilers;
+the `CMAKE_*` variables below are passed through to CMake by `whisper-rs-sys`.
+The `-march` flags turn on the ARMv8.2 dot-product and half-precision vector
+instructions that every recent phone has.
 
-# Build for Android (requires NDK)
-cd bindings/android
-cargo build --release --target aarch64-linux-android
+```bash
+# Install the Android target and cargo-ndk once
+rustup target add aarch64-linux-android
+cargo install cargo-ndk
+
+NDK=$HOME/Android/Sdk/ndk/29.0.14206865
+ANDROID_NDK_HOME=$NDK \
+CMAKE_ANDROID_NDK=$NDK CMAKE_ANDROID_ARCH_ABI=arm64-v8a CMAKE_SYSTEM_VERSION=29 \
+CMAKE_ANDROID_STL_TYPE=c++_shared \
+CFLAGS_aarch64_linux_android="-march=armv8.2-a+dotprod+fp16" \
+CXXFLAGS_aarch64_linux_android="-march=armv8.2-a+dotprod+fp16" \
+cargo ndk -t arm64-v8a --platform 29 -o /tmp/vt-jni build --release -p voice-transcription-android
 ```
+
+This produces `/tmp/vt-jni/arm64-v8a/libvoice_transcription_android.so`. It links
+against `libc++_shared.so`, which must ship in the APK next to it (copy it from
+`$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/`).
+
+The Kotlin side is generated from the compiled library (the crate uses UniFFI
+proc-macros, there is no `.udl` file), with any `uniffi-bindgen` 0.28 binary:
+
+```bash
+uniffi-bindgen generate --library /tmp/vt-jni/arm64-v8a/libvoice_transcription_android.so \
+    --language kotlin --out-dir /path/to/app/src/main/java
+```
+
+The result is `uniffi/voice_transcription/voice_transcription.kt` (package
+`uniffi.voice_transcription`), which loads the library with JNA.
+
+On Android there is no ffmpeg, so hand the library a 16 kHz mono 16-bit WAV
+file; the Voice Android app converts recordings with `MediaCodec` first.
+
+### Stopping a transcription
+
+`transcribe` is one long call into native code, so a caller cannot simply
+drop it: whisper.cpp has to be told from the inside. `request_transcription_cancel()`
+raises a flag that the model checks between windows of audio; the call in
+progress returns `Cancelled` within about a second, and the partial text is
+discarded rather than returned. `clear_transcription_cancel()` lowers the
+flag, and a caller must do so before starting work that should run.
+
+The flag is one per process, not one per client, because the phone
+deliberately runs a single transcription at a time: the model wants about a
+gigabyte of memory and every core, so a second job would only slow the first
+one down. Anything that runs several transcriptions at once must not use it,
+because it would stop all of them together.
 
 ## Testing
 
@@ -253,7 +297,7 @@ for segment in result.segments:
 ### Kotlin (Android)
 
 ```kotlin
-import voice_transcription.*
+import uniffi.voice_transcription.*
 
 // Create client
 val client = createLocalWhisperClient("/path/to/ggml-base.bin")
@@ -266,12 +310,13 @@ println("Languages: ${result.languages}")
 // With specific language
 val result = client.transcribeWithLanguage("/path/to/audio.wav", "en")
 
-// With custom configuration
+// With custom configuration; beamSize = 5u is beam search (most accurate), null or 1u is greedy
 val config = TranscriptionConfig(
     language = "he",
     speakerCount = 2u,
     wordTimestamps = false,
-    model = null
+    model = null,
+    beamSize = 5u
 )
 val result = client.transcribeWithConfig("/path/to/audio.wav", config)
 

@@ -48,6 +48,7 @@
 
 pub mod audio;
 pub mod backend;
+pub mod cancel;
 pub mod backends;
 pub mod client;
 pub mod error;
@@ -84,6 +85,7 @@ pub fn enable_debug_logging() {
 
 // Re-export main types at crate root for convenience
 pub use backend::{BackendConfig, TranscriptionBackend};
+pub use cancel::{cancel_requested, clear_cancel, request_cancel};
 pub use client::TranscriptionClient;
 pub use error::{Result, TranscriptionError};
 pub use schema::{HasProviderSchema, OptionType, OptionValue, ProviderOption, ProviderSchema};
